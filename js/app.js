@@ -2,12 +2,13 @@
 import { parseChord, describeChord, transposeSymbol, romanNumeral, guessKey, pcName, mod12, TUNINGS, KEY_NAMES, degreeFamily, parseNote } from "./theory.js";
 import { findVoicings, bestPicks, neckMap, regionOf } from "./voicer.js";
 import { chordBox, neckSvg, shapeText } from "./diagram.js";
-import { strum, pluck, unlock } from "./audio.js";
+import { strum, pluck, click, unlock } from "./audio.js";
+import { movableShapes, placeShape, nextStart, groupOf, stringSet, degreeWord, maxStart } from "./shapes.js";
 import { parseChordPro, chordsUsed, progression, convertToChordPro, looksLikeChordPro, isChordLine } from "./chordpro.js";
 import { songs, uid, loadPrefs, savePrefs, saveText, openTextFiles, keepAwake, persistStorage, isAndroid } from "./store.js";
 import { SAMPLES } from "./samples.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const $view = document.getElementById("view");
 let prefs = loadPrefs();
 const setPref = (patch) => { prefs = { ...prefs, ...patch }; savePrefs(prefs); };
@@ -129,6 +130,7 @@ function route() {
   const [, page, arg] = h.match(/^#\/([^/]*)\/?(.*)$/) || [];
   qsa("nav.tabs button", document).forEach((b) => b.setAttribute("aria-current", h.startsWith(b.dataset.go) || (page === "song" || page === "edit") && b.dataset.go === "#/songs" ? "page" : "false"));
   $view.scrollTop = 0;
+  if (page === "shapes") return viewShapes(arg);
   if (page === "songs") return viewSongs();
   if (page === "song") return viewSong(decodeURIComponent(arg));
   if (page === "edit") return viewEditor(decodeURIComponent(arg));
@@ -401,6 +403,242 @@ function openOptions() {
   const sh = openSheet(`<div class="sheet-head"><h2>Shape options</h2><button class="btn sm" data-close>Done</button></div><div class="opts-host">${optionsHtml()}</div>`,
     (e) => handleOption(e.target, false));
   sh.addEventListener("change", (e) => handleOption(e.target, true));
+}
+
+// ======================================================================
+// Shapes: movable chord shapes by quality, no letter names, for practice
+// ======================================================================
+const SHAPE_QUALS = QUALS.filter(([q]) => q !== "5").concat([["5", "5"]]);
+const SHAPE_FILTERS = [["best", "Best"], ["triad", "Triads"], ["jazz", "Jazz"], ["barre", "Barre"], ["all", "All"]];
+const PATTERNS = [["up", "Up a fret"], ["down", "Down a fret"], ["fourths", "Cycle of 4ths"], ["random", "Random"]];
+const shapeState = { filter: "best", inv: false, rootless: false };
+const qToUrl = (q) => encodeURIComponent(q === "" ? "maj" : q);
+const urlToQ = (u) => { const q = decodeURIComponent(u || ""); return q === "maj" ? "" : q; };
+const shapeUrlKey = (s) => s.rel.map((r) => (r < 0 ? "x" : r)).join("-");
+const boxMode = () => (prefs.labels === "fingers" ? "fingers" : "degrees"); // note names mean nothing without a letter
+const shapeCache = new Map();
+function shapesFor(q, inv, rootless) {
+  const k = [q, inv, rootless, prefs.tuning, prefs.stretch].join("|");
+  if (!shapeCache.has(k)) {
+    if (shapeCache.size > 60) shapeCache.clear();
+    shapeCache.set(k, movableShapes(q, { tuning: tuningNotes(), span: prefs.stretch ? 5 : 4, inversions: inv, rootless, maxGaps: 1 }));
+  }
+  return shapeCache.get(k);
+}
+function shapeCard(s) {
+  const tags = [];
+  if (s.form) tags.push(s.form + " form");
+  const map = { barre: "barre", triad: "triad", shell: "shell", close: "close", drop2: "drop 2", drop3: "drop 3", drop24: "drop 2&4", rootless: "rootless" };
+  for (const t of s.tags) if (map[t] && !(t === "barre" && s.form)) tags.push(map[t]);
+  const S = s.rel.length;
+  return `<a class="vcard shape" href="#/shapes/${qToUrl(s.quality)}/${shapeUrlKey(s)}" aria-label="Practise this shape, ${esc(stringSet(s, S))}">
+    ${chordBox({ frets: s.rel, labels: s.labels, fingers: s.fingers, barre: s.barre, notes: s.rel.map(() => null) }, { mode: boxMode(), lefty: prefs.lefty, movable: true })}
+    <div class="cap">${esc(stringSet(s, S))}</div>
+    <div class="tags">${esc(tags.join(" · "))}</div>
+  </a>`;
+}
+
+function viewShapes(arg) {
+  const [qu, key] = (arg || "").split("/");
+  if (key) return viewShapePractice(urlToQ(qu), key);
+  const q = qu !== undefined && qu !== "" ? urlToQ(qu) : prefs.shapesQual ?? "m7";
+  setPref({ shapesQual: q });
+  const chord = parseChord("C" + q);
+  $view.innerHTML = `<div class="page shapes-lib">
+    <h1>Shapes</h1>
+    <div class="quals wrap" role="group" aria-label="Chord type">${SHAPE_QUALS.map(([qq, l]) => `<button data-sq="${esc(qq)}" aria-pressed="${qq === q}">${esc(l)}</button>`).join("")}</div>
+    <div class="chord-head"><h2>${esc(q === "" ? "maj" : q)}</h2><span class="desc">${esc(chord ? describeChord(chord) : "")}</span></div>
+    <div class="tones">${chord ? chord.tones.map((t) => `<span class="tone ${t.required ? "" : "opt"}"><i style="background:var(--deg-${degreeFamily(t.label)})">${t.label === "1" ? "R" : esc(t.label)}</i><b>${esc(degreeWord(t.label))}</b></span>`).join("") : ""}</div>
+    <p class="hint">Every shape here moves: slide it up or down and the chord type stays the same. Tap one to practise it on the neck.</p>
+    <div class="shape-tools">
+      <div class="seg" id="sfilters" role="group" aria-label="Which shapes"></div>
+      <div class="row">
+        <label class="chipbox"><input type="checkbox" data-sx="inv" ${shapeState.inv ? "checked" : ""}><span>Inversions</span></label>
+        <label class="chipbox"><input type="checkbox" data-sx="rootless" ${shapeState.rootless ? "checked" : ""}><span>Rootless</span></label>
+        <span class="seg">${[["degrees", "Degrees"], ["fingers", "Fingers"]].map(([k, l]) => `<button data-sl="${k}" aria-pressed="${boxMode() === k}">${l}</button>`).join("")}</span>
+      </div>
+    </div>
+    <div id="sgroups"></div>
+  </div>`;
+  const draw = () => {
+    const all = shapesFor(q, shapeState.inv, shapeState.rootless);
+    const pick = {
+      best: () => {
+        const per = new Map();
+        return all.filter((s) => { const g = groupOf(s); const n = per.get(g) || 0; if (n >= 3) return false; per.set(g, n + 1); return true; });
+      },
+      triad: () => all.filter((s) => s.tags.includes("triad")),
+      jazz: () => all.filter((s) => s.tags.some((t) => ["drop2", "drop3", "drop24", "shell", "close"].includes(t))),
+      barre: () => all.filter((s) => s.tags.includes("barre")),
+      all: () => all,
+    };
+    const counts = Object.fromEntries(SHAPE_FILTERS.map(([k]) => [k, pick[k]().length]));
+    if (!counts[shapeState.filter]) shapeState.filter = "best";
+    qs("#sfilters").innerHTML = SHAPE_FILTERS.filter(([k]) => counts[k] || k === "best").map(([k, l]) => `<button data-sf="${k}" aria-pressed="${shapeState.filter === k}">${l}</button>`).join("");
+    const shown = pick[shapeState.filter]();
+    let html = "", g = null;
+    for (const s of shown) {
+      const gg = groupOf(s, s.rel.length);
+      if (gg !== g) { if (g !== null) html += `</div>`; html += `<h3 class="group-title">${esc(gg)}</h3><div class="vgrid">`; g = gg; }
+      html += shapeCard(s);
+    }
+    if (g !== null) html += `</div>`;
+    qs("#sgroups").innerHTML = html || `<div class="empty"><b>No movable shapes with these settings</b>Try Inversions, or wider stretches in Settings.</div>`;
+  };
+  draw();
+  $view.onclick = (e) => {
+    const b = e.target.closest("[data-sq],[data-sf],[data-sl]");
+    if (!b) return;
+    if (b.dataset.sq !== undefined) { location.hash = "#/shapes/" + qToUrl(b.dataset.sq); return; }
+    if (b.dataset.sf) { shapeState.filter = b.dataset.sf; draw(); return; }
+    if (b.dataset.sl) { setPref({ labels: b.dataset.sl }); viewShapes(qToUrl(q)); }
+  };
+  $view.onchange = (e) => {
+    const t = e.target.closest("[data-sx]");
+    if (!t) return;
+    shapeState[t.dataset.sx] = t.checked;
+    draw();
+  };
+  const sel = qs(`[data-sq="${CSS.escape(q)}"]`);
+  if (sel) sel.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
+function viewShapePractice(q, urlKey) {
+  const rel = urlKey.split("-").map((x) => (x === "x" ? -1 : parseInt(x, 10)));
+  const pool = [false, true].flatMap((inv) => [false, true].map((rl) => shapesFor(q, inv, rl))).flat();
+  const shape = pool.find((s) => s.rel.join() === rel.join());
+  const S = tuningNotes().length;
+  if (!shape || rel.length !== S) {
+    $view.innerHTML = `<div class="page"><div class="empty"><b>That shape isn't in this tuning</b><a href="#/shapes/${qToUrl(q)}">Back to shapes</a></div></div>`;
+    return;
+  }
+  const maxF = Math.max(prefs.maxFret, 15);
+  const hi = maxStart(shape, maxF);
+  const st = {
+    start: Math.min(hi, prefs.shapesStart || 5),
+    pattern: prefs.shapesPattern || "up",
+    bpm: prefs.shapesBpm || 72,
+    beats: prefs.shapesBeats || 4,
+    auto: false, reveal: !!prefs.shapesShowName, beat: 0, timer: 0,
+  };
+  const tags = [shape.form && shape.form + " form", ...shape.tags.map((t) => ({ drop2: "drop 2", drop3: "drop 3", drop24: "drop 2&4", shell: "shell", triad: "triad", close: "close" }[t])).filter(Boolean)].filter(Boolean);
+
+  const placed = () => placeShape(shape, st.start, tuningNotes());
+  function nameHtml() {
+    const p = placed();
+    const rs = shape.labels.findIndex((l, s) => l === "1" && p.frets[s] >= 0);
+    const where = rs >= 0 ? `root on string ${S - rs}, fret ${p.frets[rs]}` : "no root in this shape";
+    if (!st.reveal) return `<button class="name-card hidden-name" data-p="reveal"><span class="q">?</span><span>Name the chord, then tap to check</span></button>`;
+    return `<button class="name-card" data-p="reveal" aria-label="Hide the name"><span class="q">${esc(p.chord ? p.chord.name : p.rootName)}</span><span>${esc(where)}</span></button>`;
+  }
+  function neckHtml() {
+    const p = placed();
+    const cells = p.chord ? neckMap(p.chord, { tuning: tuningNotes(), capo: 0, maxFret: maxF }) : [];
+    return neckSvg(cells, p, { tuning: tuningNotes(), maxFret: maxF, lefty: prefs.lefty, mode: "degrees" });
+  }
+  function render() {
+    $view.innerHTML = `<div class="song-top"><div class="title"><a class="btn ghost icon" href="#/shapes/${qToUrl(q)}" aria-label="Back to shapes">${ICON.back}</a>
+        <div class="grow"><h1>${esc(q === "" ? "maj" : q)} shape</h1><div class="by">${esc([groupOf(shape, S), stringSet(shape, S), ...tags].join(" · "))}</div></div></div></div>
+      <div class="page practice">
+        <div class="pr-left">
+          <div class="pr-box">${chordBox({ frets: shape.rel, labels: shape.labels, fingers: shape.fingers, barre: shape.barre, notes: shape.rel.map(() => null) }, { mode: boxMode(), lefty: prefs.lefty, movable: true })}</div>
+          <div id="pr-name">${nameHtml()}</div>
+          <label class="toggle"><span class="t"><b>Always show the name</b></span><input type="checkbox" data-p="always" ${prefs.shapesShowName ? "checked" : ""}></label>
+        </div>
+        <div class="pr-right">
+          <div class="neck-wrap" id="pr-neck">${neckHtml()}</div>
+          <div class="pr-controls">
+            <div class="row">
+              <span class="stepper"><button data-p="down1" aria-label="Down a fret">−</button><output id="pr-fret">Fret ${st.start}</output><button data-p="up1" aria-label="Up a fret">+</button></span>
+              <button class="btn" data-p="strum">${ICON.play}<span>Play shape</span></button>
+            </div>
+            <div class="pr-move">
+              <span class="seg" role="group" aria-label="How to move">${PATTERNS.map(([k, l]) => `<button data-pat="${k}" aria-pressed="${st.pattern === k}">${l}</button>`).join("")}</span>
+              <button class="btn pri" data-p="next">Next position</button>
+            </div>
+            <div class="row pr-auto">
+              <button class="btn" data-p="auto" id="pr-auto">${st.auto ? ICON.pause : ICON.play}<span>${st.auto ? "Stop" : "Auto-move"}</span></button>
+              <span class="stepper"><button data-p="bpm-" aria-label="Slower">−</button><output id="pr-bpm">${st.bpm} bpm</output><button data-p="bpm+" aria-label="Faster">+</button></span>
+              <span class="seg" role="group" aria-label="Beats on each shape">${[2, 4, 8].map((n) => `<button data-beats="${n}" aria-pressed="${st.beats === n}">${n} beats</button>`).join("")}</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+  function update(playIt) {
+    qs("#pr-fret").textContent = `Fret ${st.start}`;
+    qs("#pr-name").innerHTML = nameHtml();
+    const wrap = qs("#pr-neck");
+    wrap.innerHTML = neckHtml();
+    const xs = [...wrap.querySelectorAll(".nd.on circle")].map((c) => +c.getAttribute("cx"));
+    const svg = wrap.querySelector("svg");
+    if (xs.length && svg) {
+      const scale = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+      const mid = ((Math.min(...xs) + Math.max(...xs)) / 2) * scale;
+      wrap.scrollTo({ left: Math.max(0, mid - wrap.clientWidth / 2), behavior: "smooth" });
+    }
+    setPref({ shapesStart: st.start });
+    if (playIt && prefs.sound) strum(placed().notes);
+  }
+  function move(to) {
+    st.start = to;
+    if (!prefs.shapesShowName) st.reveal = false;
+    update(true);
+  }
+  function stopAuto() { st.auto = false; clearInterval(st.timer); }
+  function startAuto() {
+    st.auto = true; st.beat = 0;
+    const tick = () => {
+      if (st.beat % st.beats === 0) {
+        if (st.beat > 0) move(nextStart(shape, st.start, st.pattern, tuningNotes(), maxF));
+        else if (prefs.sound) strum(placed().notes);
+        click(true);
+      } else click(false);
+      st.beat++;
+    };
+    st.tick = tick;
+    tick();
+    st.timer = setInterval(tick, 60000 / st.bpm);
+  }
+  const autoBtn = () => { const b = qs("#pr-auto"); if (b) b.innerHTML = `${st.auto ? ICON.pause : ICON.play}<span>${st.auto ? "Stop" : "Auto-move"}</span>`; };
+  render();
+  update(false);
+  $view.onclick = (e) => {
+    const nd = e.target.closest(".nd");
+    if (nd) { if (prefs.sound) pluck(tuningNotes()[+nd.dataset.s] + +nd.dataset.f); return; }
+    const b = e.target.closest("[data-p],[data-pat],[data-beats]");
+    if (!b || b.tagName === "INPUT") return;
+    if (b.dataset.pat) { st.pattern = b.dataset.pat; setPref({ shapesPattern: st.pattern }); qsa("[data-pat]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.pat === st.pattern))); return; }
+    if (b.dataset.beats) {
+      st.beats = +b.dataset.beats; setPref({ shapesBeats: st.beats });
+      qsa("[data-beats]").forEach((x) => x.setAttribute("aria-pressed", String(+x.dataset.beats === st.beats)));
+      if (st.auto) { stopAuto(); startAuto(); }
+      return;
+    }
+    const k = b.dataset.p;
+    if (k === "up1") move(st.start >= hi ? 1 : st.start + 1);
+    if (k === "down1") move(st.start <= 1 ? hi : st.start - 1);
+    if (k === "next") move(nextStart(shape, st.start, st.pattern, tuningNotes(), maxF));
+    if (k === "strum" && prefs.sound !== false) strum(placed().notes);
+    if (k === "reveal") { st.reveal = !st.reveal; qs("#pr-name").innerHTML = nameHtml(); }
+    if (k === "auto") { if (st.auto) stopAuto(); else startAuto(); autoBtn(); }
+    if (k === "bpm-" || k === "bpm+") {
+      st.bpm = Math.max(30, Math.min(220, st.bpm + (k === "bpm+" ? 4 : -4)));
+      setPref({ shapesBpm: st.bpm });
+      qs("#pr-bpm").textContent = `${st.bpm} bpm`;
+      if (st.auto) { clearInterval(st.timer); st.timer = setInterval(st.tick, 60000 / st.bpm); }
+    }
+  };
+  $view.onchange = (e) => {
+    const t = e.target.closest('[data-p="always"]');
+    if (!t) return;
+    setPref({ shapesShowName: t.checked });
+    st.reveal = t.checked;
+    qs("#pr-name").innerHTML = nameHtml();
+  };
+  window.__fretwiseWantAwake = true;
+  keepAwake(true);
+  cleanup = () => { stopAuto(); window.__fretwiseWantAwake = false; keepAwake(false); };
 }
 
 // ======================================================================

@@ -13,7 +13,8 @@ function dotText(mode, label, midi, finger) {
 
 /**
  * Chord box. v = voicing from voicer.js.
- * opts: { mode: "degrees"|"notes"|"fingers", lefty, strings (count), compact }
+ * opts: { mode: "degrees"|"notes"|"fingers", lefty, movable }
+ * movable: frets are relative (1 = lowest fret of the shape); no nut, no fret number, no inlays.
  */
 export function chordBox(v, opts = {}) {
   const S = v.frets.length;
@@ -22,8 +23,9 @@ export function chordBox(v, opts = {}) {
   const fretted = v.frets.filter((f) => f > 0);
   const maxF = fretted.length ? Math.max(...fretted) : 0;
   const minF = fretted.length ? Math.min(...fretted) : 0;
-  const base = maxF <= 4 ? 1 : minF; // first fret shown
-  const nRows = maxF <= 4 ? 4 : Math.max(4, maxF - minF + 1);
+  const movable = !!opts.movable;
+  const base = movable ? 1 : maxF <= 4 ? 1 : minF; // first fret shown
+  const nRows = movable ? Math.max(4, maxF) : maxF <= 4 ? 4 : Math.max(4, maxF - minF + 1);
   const W = 100, padX = 17, top = 24, fh = 19;
   const gap = (W - padX * 2) / (S - 1);
   const H = top + nRows * fh + 10;
@@ -37,13 +39,14 @@ export function chordBox(v, opts = {}) {
   for (let r = 0; r < nRows; r++) {
     const f = base + r;
     const y = top + (r + 0.5) * fh;
+    if (movable) continue;
     if ([3, 5, 7, 9, 15, 17, 19, 21].includes(f)) o += `<circle class="inlay" cx="${W / 2}" cy="${y}" r="2.1"/>`;
     if (f === 12 || f === 24) o += `<circle class="inlay" cx="${W / 2 - gap}" cy="${y}" r="2.4"/><circle class="inlay" cx="${W / 2 + gap}" cy="${y}" r="2.4"/>`;
   }
   // frets
   for (let r = 0; r <= nRows; r++) {
     const y = top + r * fh;
-    o += `<line class="${r === 0 && base === 1 ? "nut" : "fret"}" x1="${padX - 7}" x2="${W - padX + 7}" y1="${y}" y2="${y}"/>`;
+    o += `<line class="${r === 0 && base === 1 && !movable ? "nut" : "fret"}" x1="${padX - 7}" x2="${W - padX + 7}" y1="${y}" y2="${y}"/>`;
   }
   // strings, heavier toward the bass
   for (let s = 0; s < S; s++) {
@@ -51,7 +54,7 @@ export function chordBox(v, opts = {}) {
     o += `<line class="string" x1="${sx(s)}" x2="${sx(s)}" y1="${top}" y2="${top + nRows * fh}" stroke-width="${w.toFixed(2)}"/>`;
   }
   // fret number
-  if (base > 1) o += `<text class="fretno" x="${lefty ? W - 2 : 2}" y="${top + fh * 0.5 + 3.5}" text-anchor="${lefty ? "end" : "start"}">${base}</text>`;
+  if (base > 1 && !movable) o += `<text class="fretno" x="${lefty ? W - 2 : 2}" y="${top + fh * 0.5 + 3.5}" text-anchor="${lefty ? "end" : "start"}">${base}</text>`;
   // barre
   if (v.barre) {
     const x1 = Math.min(sx(v.barre.from), sx(v.barre.to)), x2 = Math.max(sx(v.barre.from), sx(v.barre.to));
