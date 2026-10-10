@@ -71,6 +71,26 @@ export function pluck(midi) {
   strum([midi], "pluck");
 }
 
+/** Metronome tick. accent = the first beat of a change. */
+export function click(accent = false) {
+  const c = ac();
+  if (!c) return;
+  const t = c.currentTime + 0.01;
+  const o = c.createOscillator();
+  const g = c.createGain();
+  o.type = "square";
+  o.frequency.value = accent ? 1760 : 1175;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(accent ? 0.22 : 0.12, t + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+  const hp = c.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 600;
+  o.connect(hp).connect(g).connect(c.destination);
+  o.start(t);
+  o.stop(t + 0.06);
+}
+
 /** Call from the first user gesture so iOS lets audio play. */
 export function unlock() {
   ac();

@@ -1,8 +1,8 @@
 // Offline cache for the iPad / browser install. Bump VERSION with every release.
-const VERSION = "fretwise-1.0.0";
+const VERSION = "fretwise-1.1.0";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
-  "js/app.js", "js/theory.js", "js/voicer.js", "js/diagram.js", "js/audio.js", "js/chordpro.js", "js/store.js", "js/samples.js",
+  "js/app.js", "js/theory.js", "js/voicer.js", "js/diagram.js", "js/audio.js", "js/chordpro.js", "js/store.js", "js/samples.js", "js/shapes.js",
   "fonts/atkinson-hyperlegible-latin-400-normal.woff2", "fonts/atkinson-hyperlegible-latin-700-normal.woff2",
   "fonts/barlow-condensed-latin-500-normal.woff2", "fonts/barlow-condensed-latin-600-normal.woff2", "fonts/barlow-condensed-latin-700-normal.woff2",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png",
