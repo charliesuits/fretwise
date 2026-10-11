@@ -50,6 +50,7 @@ export const DEFAULT_PREFS = {
   capo: 0, // chord finder capo
   sound: true,
   theme: "auto", // auto | stage | day
+  uiSize: "auto", // smaller | auto | larger | largest (read by the sizing script in index.html)
   favs: {}, // chord symbol -> fret key
   recent: [],
   songFont: 20,

@@ -14,6 +14,34 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="css/app.css">
+<script>
+// Interface size. Everything in the stylesheet is in rem, so this one number scales the whole app.
+// Tablets aim for a layout about 980pt wide in portrait and 1240pt in landscape; phones and desktops stay at 1.
+(function () {
+  var SIZES = { smaller: 0.85, auto: 1, larger: 1.15, largest: 1.3 };
+  function apply() {
+    var size = "auto";
+    try { size = JSON.parse(localStorage.getItem("fretwise.prefs") || "{}").uiSize || "auto"; } catch (e) {}
+    var w = window.innerWidth, h = window.innerHeight;
+    var touch = (navigator.maxTouchPoints || 0) > 0 || (window.matchMedia && matchMedia("(pointer: coarse)").matches);
+    var tablet = touch && Math.min(w, h) >= 700;
+    var s = 1;
+    if (tablet) s = Math.min(2.2, Math.max(1.1, w / (h >= w ? 980 : 1240)));
+    s *= SIZES[size] || 1;
+    var eff = w / s, r = document.documentElement;
+    r.style.fontSize = (16 * s).toFixed(2) + "px";
+    r.classList.toggle("tablet", tablet);
+    r.classList.toggle("wide", eff >= 900);
+    r.classList.toggle("xwide", eff >= 1150);
+    r.classList.toggle("small", eff <= 560);
+    r.classList.toggle("narrow", eff <= 420);
+  }
+  window.__fwScale = apply;
+  apply();
+  window.addEventListener("resize", apply);
+  window.addEventListener("orientationchange", function () { setTimeout(apply, 120); });
+})();
+</script>
 </head>
 <body>
 <div id="app">
