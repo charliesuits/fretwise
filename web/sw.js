@@ -1,5 +1,5 @@
 // Offline cache for the iPad / browser install. Bump VERSION with every release.
-const VERSION = "fretwise-1.1.0";
+const VERSION = "fretwise-1.2.0";
 const FILES = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
   "js/app.js", "js/theory.js", "js/voicer.js", "js/diagram.js", "js/audio.js", "js/chordpro.js", "js/store.js", "js/samples.js", "js/shapes.js",

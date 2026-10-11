@@ -73,7 +73,7 @@ export function chordBox(v, opts = {}) {
       const fam = label === "bass" ? "bass" : degreeFamily(label);
       const t = dotText(mode, label, v.notes[s], v.fingers[s]);
       o += `<g class="dot deg-${fam}"><circle cx="${x}" cy="${fy(f)}" r="6.4"/>`;
-      if (t) o += `<text x="${x}" y="${fy(f) + 2.6}" text-anchor="middle" class="${t.length > 2 ? "small" : ""}">${esc(t)}</text>`;
+      if (t) o += `<text x="${x}" y="${fy(f) + 2.5}" text-anchor="middle" class="${t.length > 2 ? "small" : t.length === 2 ? "mid" : ""}">${esc(t)}</text>`;
       o += `</g>`;
     }
   }
@@ -93,7 +93,7 @@ export function shapeText(frets) {
 
 /**
  * Horizontal neck with every chord tone. cells from neckMap(), v = highlighted voicing (optional).
- * opts: { tuning (midi incl. capo), maxFret, lefty, mode }
+ * opts: { tuning (midi incl. capo), maxFret, lefty, mode, tall }
  */
 export function neckSvg(cells, v, opts = {}) {
   const S = opts.tuning.length;
@@ -102,14 +102,15 @@ export function neckSvg(cells, v, opts = {}) {
   const mode = opts.mode === "notes" ? "notes" : "degrees";
   const scale = 1500; // virtual scale length
   const pos = (n) => scale * (1 - Math.pow(2, -n / 12));
-  const nutX = 42;
+  const sg = opts.tall ? (opts.tall === "xl" ? 40 : 32) : 24; // tall / "xl": more room between strings
+  const nutX = 18 + sg; // room for string names and open-string dots
   const widthAt = pos(maxF + 0.6);
   const W = nutX + widthAt + 8;
-  const sg = 24, topY = 16;
+  const topY = 16;
   const H = topY + sg * (S - 1) + 34;
   const X = (x) => (lefty ? W - x : x);
   const fretX = (n) => nutX + pos(n);
-  const mid = (f) => (f === 0 ? nutX - 14 : (fretX(f - 1) + fretX(f)) / 2);
+  const mid = (f) => (f === 0 ? nutX - sg * 0.6 : (fretX(f - 1) + fretX(f)) / 2);
   const sy = (s) => topY + (S - 1 - s) * sg; // low string at the bottom, like tab
 
   let o = `<svg class="neck" viewBox="0 0 ${W.toFixed(0)} ${H}" preserveAspectRatio="xMinYMid meet" role="img" aria-label="Chord tones across the neck">`;
@@ -140,11 +141,11 @@ export function neckSvg(cells, v, opts = {}) {
       const fam = c.label === "bass" ? "bass" : degreeFamily(c.label);
       const t = mode === "notes" || c.label === "bass" ? pcName(c.midi) : c.label === "1" ? "R" : c.label;
       const cls = `nd deg-${fam}${on ? " on" : v ? " dim" : ""}`;
-      o += `<g class="${cls}" data-s="${c.s}" data-f="${c.f}"><circle cx="${X(mid(c.f))}" cy="${sy(c.s)}" r="${on ? 10 : 8.6}"/><text x="${X(mid(c.f))}" y="${sy(c.s) + 3.4}" text-anchor="middle">${esc(t)}</text></g>`;
+      o += `<g class="${cls}" data-s="${c.s}" data-f="${c.f}"><circle cx="${X(mid(c.f))}" cy="${sy(c.s)}" r="${((on ? 0.42 : 0.36) * sg).toFixed(1)}"/><text x="${X(mid(c.f))}" y="${(sy(c.s) + sg * 0.14).toFixed(1)}" text-anchor="middle" style="font-size:${(sg * 0.4).toFixed(1)}px">${esc(t)}</text></g>`;
     }
   }
   if (v) {
-    for (let s = 0; s < S; s++) if (v.frets[s] < 0) o += `<text class="mutex" x="${X(nutX - 14)}" y="${sy(s) + 3.5}" text-anchor="middle">×</text>`;
+    for (let s = 0; s < S; s++) if (v.frets[s] < 0) o += `<text class="mutex" x="${X(nutX - sg * 0.6)}" y="${sy(s) + 3.5}" text-anchor="middle">×</text>`;
   }
   o += `</svg>`;
   return o;

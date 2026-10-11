@@ -8,7 +8,7 @@ import { parseChordPro, chordsUsed, progression, convertToChordPro, looksLikeCho
 import { songs, uid, loadPrefs, savePrefs, saveText, openTextFiles, keepAwake, persistStorage, isAndroid } from "./store.js";
 import { SAMPLES } from "./samples.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const $view = document.getElementById("view");
 let prefs = loadPrefs();
 const setPref = (patch) => { prefs = { ...prefs, ...patch }; savePrefs(prefs); };
@@ -172,8 +172,8 @@ function viewChords(initial) {
       <div id="info"></div>
       <div id="opts-inline" class="opts-inline">${optionsHtml()}</div>
     </div>
+    <div class="neck-wrap neck-row" id="neck"></div>
     <div class="right">
-      <div class="neck-wrap" id="neck"></div>
       <div class="shape-tools">
         <div class="seg" id="filters" role="group" aria-label="Which shapes"></div>
         <div class="row"><span class="count" id="count"></span><button class="btn sm opts-btn" data-act="options">${ICON.sliders}<span>Options</span></button></div>
@@ -370,7 +370,7 @@ function optionsHtml() {
       <div class="toggle"><span class="t"><b>Dot labels</b></span>
         <span class="seg">${[["degrees", "Degrees"], ["notes", "Notes"], ["fingers", "Fingers"]].map(([k, l]) => `<button data-o="labels:${k}" aria-pressed="${prefs.labels === k}">${l}</button>`).join("")}</span></div>
       <div class="toggle"><span class="t"><b>Tuning</b></span>
-        <select class="sel" data-o="tuning" style="max-width:220px">${Object.entries(TUNINGS).map(([k, t]) => `<option value="${k}" ${prefs.tuning === k ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></div>
+        <select class="sel" data-o="tuning" style="max-width:13.75rem">${Object.entries(TUNINGS).map(([k, t]) => `<option value="${k}" ${prefs.tuning === k ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select></div>
     </div>`;
 }
 function refreshOptions() {
@@ -534,7 +534,7 @@ function viewShapePractice(q, urlKey) {
   function neckHtml() {
     const p = placed();
     const cells = p.chord ? neckMap(p.chord, { tuning: tuningNotes(), capo: 0, maxFret: maxF }) : [];
-    return neckSvg(cells, p, { tuning: tuningNotes(), maxFret: maxF, lefty: prefs.lefty, mode: "degrees" });
+    return neckSvg(cells, p, { tuning: tuningNotes(), maxFret: maxF, lefty: prefs.lefty, mode: "degrees", tall: document.documentElement.classList.contains("wide") && (innerHeight > innerWidth ? "xl" : true) });
   }
   function render() {
     $view.innerHTML = `<div class="song-top"><div class="title"><a class="btn ghost icon" href="#/shapes/${qToUrl(q)}" aria-label="Back to shapes">${ICON.back}</a>
@@ -545,8 +545,8 @@ function viewShapePractice(q, urlKey) {
           <div id="pr-name">${nameHtml()}</div>
           <label class="toggle"><span class="t"><b>Always show the name</b></span><input type="checkbox" data-p="always" ${prefs.shapesShowName ? "checked" : ""}></label>
         </div>
+        <div class="neck-wrap pr-neck" id="pr-neck">${neckHtml()}</div>
         <div class="pr-right">
-          <div class="neck-wrap" id="pr-neck">${neckHtml()}</div>
           <div class="pr-controls">
             <div class="row">
               <span class="stepper"><button data-p="down1" aria-label="Down a fret">−</button><output id="pr-fret">Fret ${st.start}</output><button data-p="up1" aria-label="Up a fret">+</button></span>
@@ -662,7 +662,7 @@ async function viewSongs() {
   $view.innerHTML = `<div class="page">
     <div class="row" style="justify-content:space-between"><h1>Songs</h1>
       <div class="row"><button class="btn" data-act="import">${ICON.import}<span>Import</span></button><button class="btn pri" data-act="new">${ICON.plus}<span>New song</span></button></div></div>
-    <input class="inp" id="q" type="search" placeholder="Search titles, artists or chords" value="${esc(songQuery)}" aria-label="Search songs" style="margin-bottom:12px">
+    <input class="inp" id="q" type="search" placeholder="Search titles, artists or chords" value="${esc(songQuery)}" aria-label="Search songs" style="margin-bottom:0.75rem">
     <div class="song-list" id="list"></div>
   </div>`;
   const draw = () => {
@@ -841,7 +841,7 @@ async function viewSong(id) {
     $view.innerHTML = `<div class="song-top">${head()}</div>
       <div class="song-strip">${uniq.map(diagramFor).join("")}</div>
       <div class="song-body-wrap">
-        <div class="song-body" style="--song-font:${prefs.songFont}px">${meta ? `<div class="meta">${esc(meta)}</div>` : ""}${st.mode === "chart" ? chartHtml() : lyricsHtml()}</div>
+        <div class="song-body" style="--song-font:${prefs.songFont / 16}rem">${meta ? `<div class="meta">${esc(meta)}</div>` : ""}${st.mode === "chart" ? chartHtml() : lyricsHtml()}</div>
         <aside class="side" aria-label="Chord shapes"><div class="vgrid">${uniq.map(diagramFor).join("")}</div></aside>
       </div>`;
   }
@@ -878,7 +878,7 @@ async function viewSong(id) {
       return toast(best ? `Capo ${best}: ${pcName(shapeKeyPc(), shapeKeyPc())} shapes` : "No capo needed");
     }
     if (k.startsWith("mode:")) { st.mode = song.view = k.slice(5); save(); return render(); }
-    if (k === "font-" || k === "font+") { setPref({ songFont: Math.max(13, Math.min(40, prefs.songFont + (k === "font+" ? 2 : -2))) }); qs(".song-body").style.setProperty("--song-font", prefs.songFont + "px"); return; }
+    if (k === "font-" || k === "font+") { setPref({ songFont: Math.max(13, Math.min(40, prefs.songFont + (k === "font+" ? 2 : -2))) }); qs(".song-body").style.setProperty("--song-font", prefs.songFont / 16 + "rem"); return; }
     if (k === "speed-" || k === "speed+") { st.speed = song.speed = Math.max(1, Math.min(10, st.speed + (k === "speed+" ? 1 : -1))); save(); qs(".song-top").innerHTML = head(); return; }
     if (k === "scroll") { if (st.scrolling) stopScroll(); else startScroll(); qs(".song-top").innerHTML = head(); return; }
     if (k === "export") {
@@ -914,7 +914,7 @@ async function viewSong(id) {
     const picks = bestPicks(list, 18);
     if (cur && !picks.some((v) => v.key === cur.key)) picks.unshift(cur);
     if (prefs.sound && cur) strum(cur.notes);
-    openSheet(`<div class="sheet-head"><div><h2 style="font:700 34px/1 var(--font-chord)">${esc(c.name)}</h2><span class="hint">Tap a shape to use it in this song</span></div>
+    openSheet(`<div class="sheet-head"><div><h2 style="font:700 2.125rem/1 var(--font-chord)">${esc(c.name)}</h2><span class="hint">Tap a shape to use it in this song</span></div>
       <div class="row"><a class="btn sm" href="#/chords/${encodeURIComponent(c.name)}">All shapes</a><button class="btn sm" data-close>Done</button></div></div>
       <div class="vgrid">${picks.map((v) => card(v, { selected: cur && v.key === cur.key, starable: false })).join("")}</div>`, (e, sh) => {
       const p = e.target.closest("[data-act='pick']");
@@ -1022,6 +1022,7 @@ function viewSettings() {
   const seg = (key, opts) => `<span class="seg">${opts.map(([k, l]) => `<button data-p="${key}:${k}" aria-pressed="${String(prefs[key]) === String(k)}">${l}</button>`).join("")}</span>`;
   $view.innerHTML = `<div class="page"><h1>Settings</h1><div class="settings">
     <section><h2>Display</h2>
+      <div class="toggle"><span class="t"><b>Display size</b><small>Auto fits the screen; go bigger or smaller from there</small></span>${seg("uiSize", [["smaller", "Smaller"], ["auto", "Auto"], ["larger", "Larger"], ["largest", "Largest"]])}</div>
       <div class="toggle"><span class="t"><b>Theme</b><small>Stage is dark for gigs; Day is light</small></span>${seg("theme", [["auto", "Match device"], ["stage", "Stage"], ["day", "Day"]])}</div>
       <div class="toggle"><span class="t"><b>Dot labels</b><small>What the dots in chord shapes show</small></span>${seg("labels", [["degrees", "Degrees"], ["notes", "Notes"], ["fingers", "Fingers"]])}</div>
       <label class="toggle"><span class="t"><b>Left-handed</b><small>Mirror every chord shape and the neck</small></span><input type="checkbox" data-p="lefty" ${prefs.lefty ? "checked" : ""}></label>
@@ -1033,9 +1034,9 @@ function viewSettings() {
     </section>
     <section><h2>Your songs</h2>
       <p>Save a backup file of every song and your favourite shapes. Restore it on another device to copy everything across, like from the phone to the iPad.</p>
-      <div class="row" style="margin-bottom:8px"><button class="btn" data-p="backup">${ICON.share}<span>Save backup</span></button><button class="btn" data-p="restore">${ICON.import}<span>Restore backup</span></button></div>
+      <div class="row" style="margin-bottom:0.5rem"><button class="btn" data-p="backup">${ICON.share}<span>Save backup</span></button><button class="btn" data-p="restore">${ICON.import}<span>Restore backup</span></button></div>
     </section>
-    <p class="muted" style="font-size:13px">Fretwise ${VERSION}${isAndroid() ? " for Android" : ""}</p>
+    <p class="muted" style="font-size:0.8125rem">Fretwise ${VERSION}${isAndroid() ? " for Android" : ""}</p>
   </div></div>`;
   $view.onclick = async (e) => {
     const b = e.target.closest("[data-p]");
@@ -1053,6 +1054,7 @@ function viewSettings() {
     if (v !== undefined) {
       setPref({ [k]: k === "maxFret" ? +v : v });
       if (k === "theme") applyTheme();
+      if (k === "uiSize" && window.__fwScale) window.__fwScale();
       vCache.clear();
       viewSettings();
     }
