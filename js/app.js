@@ -8,7 +8,7 @@ import { parseChordPro, chordsUsed, progression, convertToChordPro, looksLikeCho
 import { songs, uid, loadPrefs, savePrefs, saveText, openTextFiles, keepAwake, persistStorage, isAndroid } from "./store.js";
 import { SAMPLES } from "./samples.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const $view = document.getElementById("view");
 let prefs = loadPrefs();
 const setPref = (patch) => { prefs = { ...prefs, ...patch }; savePrefs(prefs); };
@@ -29,6 +29,7 @@ const ICON = {
   play: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z"/></svg>`,
   pause: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z"/></svg>`,
   clear: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
+  keys: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M7.5 9.5h.01M12 9.5h.01M16.5 9.5h.01M7.5 14.5h9"/></svg>`,
   star: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1L3.2 9.6l6.1-.8z"/></svg>`,
   starO: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1L3.2 9.6l6.1-.8z"/></svg>`,
   sliders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>`,
@@ -43,8 +44,8 @@ function applyTheme() {
   const r = document.documentElement;
   if (prefs.theme === "auto") r.removeAttribute("data-theme");
   else r.setAttribute("data-theme", prefs.theme);
-  const dark = prefs.theme === "stage" || (prefs.theme === "auto" && !matchMedia("(prefers-color-scheme: light)").matches);
-  document.querySelector('meta[name="theme-color"]').setAttribute("content", dark ? "#1d1511" : "#ecebe6");
+  const dark = prefs.theme === "stage" || prefs.theme === "contrast" || (prefs.theme === "auto" && !matchMedia("(prefers-color-scheme: light)").matches);
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", prefs.theme === "contrast" ? "#000000" : dark ? "#1d1511" : "#ecebe6");
   if (window.FretwiseAndroid && window.FretwiseAndroid.setDark) window.FretwiseAndroid.setDark(dark);
 }
 
@@ -154,7 +155,7 @@ const QUALS = [["", "maj"], ["m", "m"], ["7", "7"], ["maj7", "maj7"], ["m7", "m7
   ["sus2", "sus2"], ["sus4", "sus4"], ["7sus4", "7sus4"], ["11", "11"], ["m11", "m11"], ["13", "13"], ["maj13", "maj13"], ["6/9", "6/9"],
   ["dim", "dim"], ["dim7", "dim7"], ["m7b5", "m7♭5"], ["aug", "aug"], ["7#5", "7♯5"], ["7b9", "7♭9"], ["7#9", "7♯9"], ["7#11", "7♯11"], ["maj7#11", "maj7♯11"], ["7alt", "7alt"], ["mMaj7", "m(maj7)"], ["5", "5"]];
 const FILTERS = [["best", "Best"], ["open", "Open"], ["barre", "Barre"], ["triad", "Triads"], ["jazz", "Jazz"], ["all", "All"]];
-const chordState = { input: "", filter: "best", selected: null, limit: 60 };
+const chordState = { input: "", filter: "best", selected: null, limit: 60, padOpen: null, one: null };
 
 function viewChords(initial) {
   if (initial) chordState.input = initial;
@@ -162,6 +163,7 @@ function viewChords(initial) {
     <div class="left">
       <div class="symbol-bar">
         <input class="symbol-input" id="sym" value="${esc(chordState.input)}" placeholder="Type a chord" aria-label="Chord symbol" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="search">
+        <button class="btn pad-btn" data-act="pad" aria-label="Show or hide the chord keys" aria-expanded="true">${ICON.keys}</button>
         <button class="btn" data-act="clear" aria-label="Clear">${ICON.clear}</button>
       </div>
       <div class="keypad">
@@ -176,7 +178,7 @@ function viewChords(initial) {
     <div class="right">
       <div class="shape-tools">
         <div class="seg" id="filters" role="group" aria-label="Which shapes"></div>
-        <div class="row"><span class="count" id="count"></span><button class="btn sm opts-btn" data-act="options">${ICON.sliders}<span>Options</span></button></div>
+        <div class="row"><span class="count" id="count"></span><button class="btn sm" id="one-btn" data-act="one" aria-pressed="false"><span></span><span>One at a time</span></button><button class="btn sm opts-btn" data-act="options">${ICON.sliders}<span>Options</span></button></div>
       </div>
       <div id="shapes"></div>
     </div>
@@ -190,18 +192,47 @@ function viewChords(initial) {
     clearTimeout(t);
     t = setTimeout(() => setChordInput(inp.value, false), 140);
   });
-  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { inp.blur(); setChordInput(inp.value, true); } });
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { inp.blur(); setPad(false); setChordInput(inp.value, true); } });
+  // swipe or arrow keys step through shapes in one-at-a-time view
+  let sx0 = null, sy0 = 0;
+  const shapesEl = qs("#shapes");
+  shapesEl.addEventListener("touchstart", (e) => { if (chordState.one !== null && e.touches.length === 1) { sx0 = e.touches[0].clientX; sy0 = e.touches[0].clientY; } }, { passive: true });
+  shapesEl.addEventListener("touchend", (e) => {
+    if (sx0 === null) return;
+    const dx = e.changedTouches[0].clientX - sx0, dy = e.changedTouches[0].clientY - sy0; sx0 = null;
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) stepOne(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  const onKey = (e) => {
+    if (chordState.one === null || document.querySelector(".sheet") || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); stepOne(1); } else if (e.key === "ArrowLeft") { e.preventDefault(); stepOne(-1); }
+  };
+  document.addEventListener("keydown", onKey);
+  cleanup = () => document.removeEventListener("keydown", onKey);
   $view.onclick = (e) => { if (!handleOption(e.target, false)) onChordClick(e); };
   $view.onchange = (e) => handleOption(e.target, true);
   if (!chordState.input && !initial) chordState.input = prefs.recent[0] || "C";
+  // on a phone the keys fold away once there's a chord, so the shapes start higher up the screen
+  if (chordState.padOpen === null) chordState.padOpen = !initial && !prefs.recent.length;
+  chordState.one = null;
+  setPad(chordState.padOpen);
   setChordInput(chordState.input, false, true);
   if (!initial && !chordState.input) inp.focus();
+}
+
+function setPad(open) {
+  chordState.padOpen = !!open;
+  const f = qs(".finder");
+  if (!f) return;
+  f.classList.toggle("pad-closed", !open);
+  const b = qs(".pad-btn");
+  if (b) b.setAttribute("aria-expanded", String(!!open));
 }
 
 function setChordInput(val, remember, keepUrl) {
   chordState.input = (val || "").trim();
   chordState.selected = null;
   chordState.limit = 60;
+  if (chordState.one !== null) chordState.one = 0;
   const inp = qs("#sym");
   if (inp && inp.value !== chordState.input && document.activeElement !== inp) inp.value = chordState.input;
   if (!keepUrl) history.replaceState(null, "", "#/chords/" + encodeURIComponent(chordState.input));
@@ -268,8 +299,29 @@ function renderShapes(c, list) {
   let sel = chordState.selected && list.find((v) => v.key === chordState.selected);
   if (!sel) sel = null;
   let html = "";
+  const oneBtn = qs("#one-btn");
+  if (oneBtn) { oneBtn.hidden = !shown.length; oneBtn.setAttribute("aria-pressed", String(chordState.one !== null)); oneBtn.lastElementChild.textContent = chordState.one !== null ? "Show all" : "One at a time"; }
+  qs(".finder").classList.toggle("one", chordState.one !== null && shown.length > 0);
   if (!shown.length) {
     html = `<div class="empty"><b>No playable shapes with these settings</b>Try turning on wider stretches or inversions in Options.</div>`;
+  } else if (chordState.one !== null) {
+    // one big diagram with large Back / Next targets, for reading from a music stand
+    const i = Math.max(0, Math.min(shown.length - 1, chordState.one));
+    chordState.one = i;
+    const v = shown[i];
+    chordState.selected = v.key;
+    sel = v;
+    html = `<div class="onecard" data-key="${v.key}">
+      <div class="one-top"><span class="count">${i + 1} of ${shown.length}</span></div>
+      <div class="one-box">
+        <button class="hit" data-act="pick" data-key="${v.key}" aria-label="Play shape ${esc(shapeText(v.frets))}"></button>
+        ${chordBox(v, { mode: prefs.labels, lefty: prefs.lefty })}
+        <button class="star" data-act="fav" data-key="${v.key}" aria-pressed="${favK === v.key}" aria-label="${favK === v.key ? "Remove favourite" : "Make this my usual shape"}">${favK === v.key ? ICON.star : ICON.starO}</button>
+      </div>
+      <div class="cap">${esc(shapeText(v.frets))}</div>
+      <div class="tags">${esc(tagText(v))}</div>
+      <div class="one-nav"><button class="btn" data-act="one-prev" ${i === 0 ? "disabled" : ""}>${ICON.back}<span>Back</span></button><button class="btn pri" data-act="one-next" ${i === shown.length - 1 ? "disabled" : ""}><span>Next</span><span class="fwd">${ICON.back}</span></button></div>
+    </div>`;
   } else if (chordState.filter === "all") {
     const lim = shown.slice(0, chordState.limit);
     let region = "";
@@ -286,6 +338,15 @@ function renderShapes(c, list) {
   }
   qs("#shapes").innerHTML = html;
   renderNeck(c, sel || null);
+}
+
+function stepOne(d) {
+  if (chordState.one === null) return;
+  chordState.one += d;
+  renderChord(false);
+  const c = parseChord(chordState.input);
+  const v = c && voicingsFor(c).find((x) => x.key === chordState.selected);
+  if (v && prefs.sound) strum(v.notes);
 }
 
 function renderNeck(c, v) {
@@ -319,13 +380,17 @@ function onChordClick(e) {
   }
   if (t.dataset.qual !== undefined) {
     const r = c ? c.root.name : "C";
+    setPad(false);
     return setChordInput(r + t.dataset.qual + (c && c.bass ? "/" + c.bass.name : ""), true);
   }
-  if (t.dataset.recent) return setChordInput(t.dataset.recent, true);
-  if (t.dataset.filter) { chordState.filter = t.dataset.filter; chordState.limit = 60; return renderChord(false); }
+  if (t.dataset.recent) { setPad(false); return setChordInput(t.dataset.recent, true); }
+  if (t.dataset.filter) { chordState.filter = t.dataset.filter; chordState.limit = 60; if (chordState.one !== null) chordState.one = 0; return renderChord(false); }
   if (t.classList.contains("nd")) { if (prefs.sound) { const s = +t.dataset.s, f = +t.dataset.f; pluck(tuningNotes()[s] + (prefs.capo || 0) + f); } return; }
   const act = t.dataset.act;
-  if (act === "clear") { chordState.input = ""; qs("#sym").value = ""; qs("#sym").focus(); return renderChord(false); }
+  if (act === "clear") { chordState.input = ""; chordState.one = null; qs("#sym").value = ""; setPad(true); qs("#sym").focus(); return renderChord(false); }
+  if (act === "pad") return setPad(!chordState.padOpen);
+  if (act === "one") { chordState.one = chordState.one === null ? 0 : null; if (chordState.one !== null) setPad(false); return renderChord(false); }
+  if (act === "one-prev" || act === "one-next") return stepOne(act === "one-next" ? 1 : -1);
   if (act === "more") { chordState.limit += 60; return renderChord(false); }
   if (act === "options") return openOptions();
   if (!c) return;
@@ -334,6 +399,7 @@ function onChordClick(e) {
   if (act === "pick" && v) {
     chordState.selected = v.key;
     addRecent(c.name);
+    if (chordState.one !== null) { if (prefs.sound) strum(v.notes); return; }
     qsa(".vcard").forEach((n) => n.setAttribute("aria-selected", String(n.dataset.key === v.key)));
     renderNeck(c, v);
     if (prefs.sound) strum(v.notes);
@@ -1023,7 +1089,7 @@ function viewSettings() {
   $view.innerHTML = `<div class="page"><h1>Settings</h1><div class="settings">
     <section><h2>Display</h2>
       <div class="toggle"><span class="t"><b>Display size</b><small>Auto fits the screen; go bigger or smaller from there</small></span>${seg("uiSize", [["smaller", "Smaller"], ["auto", "Auto"], ["larger", "Larger"], ["largest", "Largest"]])}</div>
-      <div class="toggle"><span class="t"><b>Theme</b><small>Stage is dark for gigs; Day is light</small></span>${seg("theme", [["auto", "Match device"], ["stage", "Stage"], ["day", "Day"]])}</div>
+      <div class="toggle"><span class="t"><b>Theme</b><small>Stage is dark for gigs; Day is light; High contrast is black with bright lines</small></span>${seg("theme", [["auto", "Match device"], ["stage", "Stage"], ["day", "Day"], ["contrast", "High contrast"]])}</div>
       <div class="toggle"><span class="t"><b>Dot labels</b><small>What the dots in chord shapes show</small></span>${seg("labels", [["degrees", "Degrees"], ["notes", "Notes"], ["fingers", "Fingers"]])}</div>
       <label class="toggle"><span class="t"><b>Left-handed</b><small>Mirror every chord shape and the neck</small></span><input type="checkbox" data-p="lefty" ${prefs.lefty ? "checked" : ""}></label>
     </section>
